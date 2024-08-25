@@ -6,7 +6,7 @@ version = "0.2.0"
 edition = "2021"
 
 [workspace]
-members = ["layouts", "binary", "builtins", "crypto", "cli"]
+members = ["layouts", "binary", "builtins", "crypto", "cli", "proof"]
 
 [features]
 default = []
