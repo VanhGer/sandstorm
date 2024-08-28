@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use ark_std::string::String;
 use ark_ff::Field;
 use ark_ff::PrimeField;
@@ -18,20 +19,25 @@ use sandstorm::claims;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
+use std::iter::zip;
 use std::path::PathBuf;
 use std::time::Instant;
 use ethnum::{u256, AsU256, U256};
 use ministark::fri::FriVerifier;
 use structopt::StructOpt;
 use ministark::hash::{Digest};
-use ministark::merkle::{ MerkleTree,};
+use ministark::merkle::{Error, MerkleTree, MerkleTreeConfig, MerkleView};
 use ministark::random::{PublicCoin};
-
-// use serde_json::Value::String;
+use ministark::utils::SerdeOutput;
+use core::num::*;
+use blake2::Blake2s256;
 use crypto::merkle::FriendlyMerkleTreeProof;
 use sandstorm::CairoClaim;
 use sandstorm::claims::recursive::CairoVerifierClaim;
 use serde::Serialize;
+use crypto::hash::blake2s::Blake2sHashFn;
+use crypto::hash::pedersen::{PedersenDigest, PedersenHashFn};
+use crypto::merkle::mixed::{FriendlyMerkleTreeConfig, MixedMerkleDigest};
 
 /// Modulus of Starkware's 252-bit prime field used for Cairo
 const STARKWARE_PRIME_HEX_STR: &str =
@@ -154,6 +160,7 @@ fn main() {
     get_proof(claim1);
 }
 
+
 fn get_proof<>(
     claim: CairoVerifierClaim,
 ) {
@@ -162,21 +169,28 @@ fn get_proof<>(
     let proof = Proof::<CairoVerifierClaim>::deserialize_compressed(&*proof_bytes).unwrap();
 
     // FRI query positions
-    let query_positions: Vec<_> = generate_positions(&claim, proof.clone()).iter().map(
+    let indices: Vec<_> = generate_positions(&claim, proof.clone());
+    let query_positions: Vec<_> = indices.iter().map(
         |x| x.as_u256()
     ).collect();
 
+
     // Merkle proof for Base trace
     let base_trace_proof = proof.trace_queries.base_trace_proof.clone();
+    let base_trace_root = proof.base_trace_commitment;
+
+    // verify base trace
+    let d = <CairoVerifierClaim as Stark>::MerkleTree::verify(&base_trace_root, base_trace_proof.clone(), &indices);
+    assert!(d.is_ok());
+
     let base_merkle_view = match base_trace_proof {
         FriendlyMerkleTreeProof::MultiCol(x) => Ok(x),
         // FriendlyMerkleTreeProof::SingleCol(x) => Ok(x),
         _ => Err("error".to_string())
     }.unwrap();
 
-    // println!("query_positions : {:?}", query_positions);
+    let base_expected_root = u256::from_be_bytes(base_trace_root.clone().as_bytes());
 
-    let base_expected_root = u256::from_be_bytes(proof.base_trace_commitment.clone().as_bytes());
     let base_initial_values: Vec<_> = base_merkle_view.initial_leaves.iter().map(
         |leaf| u256::from_be_bytes(leaf.as_bytes())).collect();
 
@@ -186,25 +200,18 @@ fn get_proof<>(
     let base_nodes: Vec<_> = base_merkle_view.nodes.iter().map(
         |node| u256::from_be_bytes(node.as_bytes())).collect();
 
-
-    let mut initialMerkleQueue: Vec<U256> = Vec::new();
+    let num_leaves = 1 << base_merkle_view.height;
+    let mut base_initial_merkle_queue: Vec<U256> = Vec::new();
     for i in 0..query_positions.len() {
-        // Wrong at this step ?
-        initialMerkleQueue.push(query_positions[i].clone());
-        initialMerkleQueue.push(base_initial_values[i]);
+        base_initial_merkle_queue.push(query_positions[i].clone() + num_leaves);
+        base_initial_merkle_queue.push(base_initial_values[i]);
     }
 
-    let mut merkleView = Vec::new();
-    merkleView.extend(base_sibling_values.iter().cloned());
-    merkleView.extend(base_nodes.iter().cloned());
-    write_to_json(&initialMerkleQueue, &merkleView, base_height, base_expected_root);
-
-
-    // println!("initialMerkleQueue: {:?}", initialMerkleQueue);
-
-
+    let mut base_merkle_view = Vec::new();
+    base_merkle_view.extend(base_sibling_values.iter().cloned());
+    base_merkle_view.extend(base_nodes.iter().cloned());
+    write_to_json(&base_initial_merkle_queue, &base_merkle_view, base_height, base_expected_root);
 }
-
 
 #[derive(Serialize)]
 struct MerkleData {

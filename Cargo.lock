@@ -1477,6 +1477,7 @@ dependencies = [
  "ark-poly",
  "ark-serialize 0.4.2",
  "ark-std 0.4.0",
+ "blake2",
  "ethnum",
  "ministark",
  "ministark-gpu",

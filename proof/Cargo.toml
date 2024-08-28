@@ -43,3 +43,4 @@ num-traits = "0.2"
 pollster = "0.2"
 rayon = { version = "1.5", optional = true }
 serde = { version = "1.0.196", features = ["derive"] }
+blake2 = "0.10.6"
