@@ -3,5 +3,8 @@
     "memory_path": "example/memory.bin",
     "pedersen": [],
     "range_check": [],
-    "bitwise": []
+    "ecdsa": [],
+    "bitwise": [],
+    "ec_op": [],
+    "poseidon": []
 }

@@ -29,5 +29,6 @@ pub mod recursive {
     pub type EthVerifierClaim =
         CairoClaim<Fp, AirConfig, ExecutionTrace, LeafVariantMerkleTree<Keccak256HashFn>, SolidityVerifierPublicCoin>;
     pub type CairoVerifierClaim =
-        CairoClaim<Fp, AirConfig, ExecutionTrace, FriendlyMerkleTree<NUM_FRIENDLY_COMMITMENT_LAYERS, PedersenHashFn>, CairoVerifierPublicCoin>;
+        // CairoClaim<Fp, AirConfig, ExecutionTrace, FriendlyMerkleTree<NUM_FRIENDLY_COMMITMENT_LAYERS, PedersenHashFn>, CairoVerifierPublicCoin>;
+        CairoClaim<Fp, AirConfig, ExecutionTrace, LeafVariantMerkleTree<Keccak256HashFn>, SolidityVerifierPublicCoin>;
 }
