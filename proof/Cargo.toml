@@ -34,7 +34,7 @@ ark-std = "0.4"
 ark-ff = "0.4"
 ark-serialize = "0.4"
 structopt = "0.3"
-ethnum = "1.5.0"
+ethnum = { version = "1.5.0", features = ["serde"] }
 sha2 = "0.10"
 sha3 = "0.10"
 serde_json = "1.0"

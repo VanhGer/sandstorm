@@ -1,3 +1,5 @@
+mod merkle_data;
+
 use ark_std::string::String;
 use ark_ff::{BigInteger, Field};
 use ark_ff::PrimeField;
@@ -20,19 +22,16 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::time::Instant;
-use ethnum::{u256, AsU256, U256};
+use ethnum::{AsU256};
 use ministark::fri::FriVerifier;
 use structopt::StructOpt;
 use ministark::hash::{Digest};
 use ministark::merkle::{ MerkleTree, MerkleTreeConfig, };
 use ministark::random::{PublicCoin};
-use ministark::utils::SerdeOutput;
-use crypto::merkle::{ LeafVariantMerkleTreeProof};
 use sandstorm::claims::recursive::CairoVerifierClaim;
 use serde::Serialize;
-use sha3::Keccak256;
-use crypto::hash::keccak::{MaskedKeccak256HashFn};
 use sandstorm::claims::starknet::EthVerifierClaim;
+use crate::merkle_data::MerkleData;
 
 /// Modulus of Starkware's 252-bit prime field used for Cairo
 const STARKWARE_PRIME_HEX_STR: &str =
@@ -78,6 +77,64 @@ enum Command {
         #[structopt(long, default_value = "80")]
         required_security_bits: u8,
     },
+}
+
+fn debug() {
+    let program = "../example/array-sum.json";
+    let air_public_input = "../example/air-public-input.json";
+
+    let program_file = File::open(program).expect("could not open program file");
+    let air_public_input_file = File::open(air_public_input).expect("could not open public input");
+    let program_json: serde_json::Value = serde_json::from_reader(program_file).unwrap();
+    let prime: String = serde_json::from_value(program_json["prime"].clone()).unwrap();
+    let prover_command = Command::Prove {
+        output: "../example/array-sum.proof".into(),
+        air_private_input: "../example/air-private-input.json".into(),
+        num_queries: 1,
+        lde_blowup_factor: 2,
+        proof_of_work_bits: 16,
+        fri_folding_factor: 8,
+        fri_max_remainder_coeffs: 16
+    };
+
+    let verifier_command = Command::Verify {
+        proof: "../example/array-sum.proof".into(),
+        required_security_bits: 80
+    };
+    match prime.to_lowercase().as_str() {
+        STARKWARE_PRIME_HEX_STR => {
+            use p3618502788666131213697322783095070105623107215331596699973092056135872020481::ark::Fp;
+            let program: CompiledProgram<Fp> = serde_json::from_value(program_json).unwrap();
+            let air_public_input: AirPublicInput<Fp> =
+                serde_json::from_reader(air_public_input_file).unwrap();
+            match air_public_input.layout {
+                Layout::Starknet => {
+                    use claims::starknet::EthVerifierClaim;
+                    println!("Starknet");
+                    let claim1 = EthVerifierClaim::new(program.clone(), air_public_input.clone());
+                    let claim2 = EthVerifierClaim::new(program, air_public_input);
+                    println!("Generate proof:");
+                    execute_command(prover_command, claim1);
+                    println!("Verify:");
+                    execute_command(verifier_command, claim2);
+                }
+                Layout::Recursive => {
+                    use claims::recursive::CairoVerifierClaim;
+                    println!("Recursive");
+                    let claim1 = CairoVerifierClaim::new(program.clone(), air_public_input.clone());
+                    let claim2 = CairoVerifierClaim::new(program, air_public_input);
+
+                    // println!("Generate proof:");
+                    execute_command(prover_command, claim1);
+                    println!("Verify:");
+                    execute_command(verifier_command, claim2);
+                }
+                _ => unimplemented!(),
+            }
+        }
+        prime => unimplemented!("prime field p={prime} is not supported yet. Consider enabling the \"experimental_claims\" feature."),
+    }
+
 }
 
 fn generate_proof() {
@@ -187,111 +244,19 @@ fn separate_starknet_proof<>(
     // Merkle proof for Base trace
     let base_trace_proof = trace_queries.base_trace_proof;
     // generate base trace input for VerifyMerkle contract.
-    generate_merkle_input(&base_trace_proof, &base_trace_commitment, &query_positions, "base_trace_proof");
+    let base_merkle_data = MerkleData::new(&base_trace_proof, &base_trace_commitment, &query_positions);
+    base_merkle_data.write_to_json("base_trace_proof");
 
     let extension_trace_proof = trace_queries.extension_trace_proof;
 
     if !extension_trace_proof.is_none() {
-        generate_merkle_input(&extension_trace_proof.unwrap(), &extension_trace_commitment.unwrap(), &query_positions, "extension_trace_proof");
+        let extension_merkle_data = MerkleData::new(&extension_trace_proof.unwrap(), &extension_trace_commitment.unwrap(), &query_positions);
+        extension_merkle_data.write_to_json("extension_trace_proof");
     }
     //
     let composition_trace_proof = trace_queries.composition_trace_proof;
-    generate_merkle_input(&composition_trace_proof, &composition_trace_commitment, &query_positions, "composition_trace_proof");
-
-}
-
-fn generate_merkle_input(
-    trace_proof: &LeafVariantMerkleTreeProof<MaskedKeccak256HashFn<20>>,
-    trace_root: &SerdeOutput<Keccak256>,
-    query_positions: &[u256],
-    file_name: &str
-) {
-    let expected_root = u256::from_be_bytes(trace_root.clone().as_bytes());
-    let merkle_view = match trace_proof {
-        LeafVariantMerkleTreeProof::Hashed(x) => Some(x),
-        _ => None,
-    };
-    if merkle_view.is_none() {
-        let merkle_view = match trace_proof {
-            LeafVariantMerkleTreeProof::Unhashed(x) => Some(x),
-            _ => None,
-        }.unwrap();
-
-        let initial_values: Vec<_> = merkle_view.initial_leaves.iter().map(
-            |leaf| {
-                let leaf_byte = leaf.0.to_bytes_be();
-                // let leaf_byte = leaf..to_bytes_be();
-                u256::from_be_bytes(leaf_byte.try_into().unwrap())
-            }).collect();
-        let height = merkle_view.height.as_u256();
-        let sibling_values: Vec<_> = merkle_view.sibling_leaves.iter().map(
-            |val| {
-                let val_byte = val.0.to_bytes_be();
-                u256::from_be_bytes(val_byte.try_into().unwrap())
-            }).collect();
-        let nodes: Vec<_> = merkle_view.nodes.iter().map(
-            |node| u256::from_be_bytes(node.as_bytes())).collect();
-
-        let num_leaves = 1 << merkle_view.height;
-        let mut initial_merkle_queue: Vec<U256> = Vec::new();
-        for i in 0..query_positions.len() {
-            initial_merkle_queue.push(query_positions[i].clone() + num_leaves);
-            initial_merkle_queue.push(initial_values[i]);
-        }
-
-        let mut merkle_view = Vec::new();
-        merkle_view.extend(sibling_values.iter().cloned());
-        merkle_view.extend(nodes.iter().cloned());
-        write_to_json(&initial_merkle_queue, &merkle_view, height, expected_root, file_name);
-
-    } else {
-        let merkle_view = merkle_view.unwrap();
-        let initial_values: Vec<_> = merkle_view.initial_leaves.iter().map(
-            |leaf| u256::from_be_bytes(leaf.as_bytes())).collect();
-        let height = merkle_view.height.as_u256();
-        let sibling_values: Vec<_> = merkle_view.sibling_leaves.iter().map(
-            |val| u256::from_be_bytes(val.as_bytes())).collect();
-        let nodes: Vec<_> = merkle_view.nodes.iter().map(
-            |node| u256::from_be_bytes(node.as_bytes())).collect();
-
-        let num_leaves = 1 << merkle_view.height;
-        let mut initial_merkle_queue: Vec<U256> = Vec::new();
-        for i in 0..query_positions.len() {
-            initial_merkle_queue.push(query_positions[i].clone() + num_leaves);
-            initial_merkle_queue.push(initial_values[i]);
-        }
-
-        let mut merkle_view = Vec::new();
-        merkle_view.extend(sibling_values.iter().cloned());
-        merkle_view.extend(nodes.iter().cloned());
-        write_to_json(&initial_merkle_queue, &merkle_view, height, expected_root, file_name);
-    }
-}
-
-#[derive(Serialize)]
-struct MerkleData {
-    initial_merkle_queue: Vec<String>,
-    merkle_view: Vec<String>,
-    height: String,
-    expected_root: String,
-}
-fn write_to_json(initial_merkle_queue: &[u256], merkle_view: &[u256], height: u256, root: u256, file_name: &str) {
-
-    let initial_merkle_queue: Vec<String> = initial_merkle_queue.iter().map(|x| x.to_string()).collect();
-    let merkle_view: Vec<String> = merkle_view.iter().map(|x| x.to_string()).collect();
-    let height = height.to_string();
-    let root = root.to_string();
-    let data = MerkleData {
-        initial_merkle_queue,
-        merkle_view,
-        height,
-        expected_root: root,
-    };
-
-    let file_path = format!("proof/{}.json", file_name);
-    let mut file = File::create(file_path).expect("Unable to create file");
-    let json_data = serde_json::to_string(&data).expect("Unable to serialize data");
-    file.write_all(json_data.as_bytes()).expect("Unable to write data");
+    let composition_merkle_data = MerkleData::new(&composition_trace_proof, &composition_trace_commitment, &query_positions);
+    composition_merkle_data.write_to_json("composition_trace_proof");
 }
 
 fn generate_positions<Claim: Stark<Fp = impl Field + ark_ff::FftField>>(claim: &Claim, proof: Proof<Claim>) -> Vec<usize> {
