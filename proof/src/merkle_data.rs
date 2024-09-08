@@ -1,30 +1,32 @@
 use std::fs::File;
 use std::io::Write;
-use ark_ff::BigInteger;
+use std::marker::PhantomData;
+use ark_ff::{BigInteger, MontBackend};
 use ethnum::{u256, AsU256, U256};
-use ministark::hash::Digest;
-use ministark::utils::SerdeOutput;
+use ministark::hash::{Digest, ElementHashFn, HashFn};
+use ministark::stark::Stark;
+use ministark_gpu::fields::p3618502788666131213697322783095070105623107215331596699973092056135872020481::ark::FpMontConfig;
 use serde::{Serialize, Serializer};
 use serde::ser::SerializeStruct;
-use sha3::Keccak256;
-use crypto::hash::keccak::MaskedKeccak256HashFn;
 use crypto::merkle::LeafVariantMerkleTreeProof;
 
 
-pub struct MerkleData {
+#[derive()]
+pub struct MerkleData  <D: Digest, H: ElementHashFn<ark_ff::Fp<MontBackend<FpMontConfig, 4>, 4>>> {
     pub initial_merkle_queue: Vec<U256>,
     pub merkle_view: Vec<U256>,
     pub height: U256,
     pub expected_root: U256,
+    _phantom_data_d: PhantomData<D>,
+    _phantom_data_h: PhantomData<H>,
 }
 
-impl MerkleData {
+impl  < D: Digest, H: ElementHashFn<ark_ff::Fp<MontBackend<FpMontConfig, 4>, 4>>> MerkleData<D, H> {
 
     pub fn new(
-        trace_proof: &LeafVariantMerkleTreeProof<MaskedKeccak256HashFn<20>>,
-        trace_root: &SerdeOutput<Keccak256>,
+        trace_proof: &LeafVariantMerkleTreeProof<H>,
+        trace_root: &D,
         query_positions: &[u256],
-        // file_name: &str
     ) -> Self {
         let expected_root = u256::from_be_bytes(trace_root.clone().as_bytes());
         let merkle_view = match trace_proof {
@@ -63,19 +65,15 @@ impl MerkleData {
             merkle_view.extend(sibling_values.iter().cloned());
             merkle_view.extend(nodes.iter().cloned());
 
-            // let initial_merkle_queue: Vec<String> = initial_merkle_queue.iter().map(|x| x.to_string()).collect();
-            // let merkle_view: Vec<String> = merkle_view.iter().map(|x| x.to_string()).collect();
-            // let height = height.to_string();
-            // let root = expected_root.to_string();
-
             Self {
                 initial_merkle_queue,
                 merkle_view,
                 height,
                 expected_root,
+                _phantom_data_d: PhantomData,
+                _phantom_data_h: PhantomData
             }
 
-            // self.write_to_json(data);
 
         } else {
             let merkle_view = merkle_view.unwrap();
@@ -103,6 +101,8 @@ impl MerkleData {
                 merkle_view,
                 height,
                 expected_root,
+                _phantom_data_d: PhantomData,
+                _phantom_data_h: PhantomData
             }
         }
     }
@@ -116,7 +116,7 @@ impl MerkleData {
 }
 
 
-impl Serialize for MerkleData {
+impl <D: Digest, H: ElementHashFn<ark_ff::Fp<MontBackend<FpMontConfig, 4>, 4>>> Serialize for MerkleData<D, H> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
