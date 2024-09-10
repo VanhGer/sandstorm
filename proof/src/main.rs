@@ -34,6 +34,7 @@ use ministark::random::{PublicCoin};
 use ministark_gpu::utils::bit_reverse_index;
 use sandstorm::claims::recursive::CairoVerifierClaim;
 use serde::Serialize;
+use crypto::merkle::LeafVariantMerkleTreeProof;
 use sandstorm::claims::starknet::EthVerifierClaim;
 use crate::fri_data::FriData;
 use crate::merkle_data::MerkleData;
@@ -85,17 +86,17 @@ enum Command {
 }
 
 fn debug() {
-    let program = "../example/array-sum.json";
-    let air_public_input = "../example/air-public-input.json";
+    let program = "example/array-sum.json";
+    let air_public_input = "example/air-public-input.json";
 
     let program_file = File::open(program).expect("could not open program file");
     let air_public_input_file = File::open(air_public_input).expect("could not open public input");
     let program_json: serde_json::Value = serde_json::from_reader(program_file).unwrap();
     let prime: String = serde_json::from_value(program_json["prime"].clone()).unwrap();
     let prover_command = Command::Prove {
-        output: "../example/array-sum.proof".into(),
-        air_private_input: "../example/air-private-input.json".into(),
-        num_queries: 1,
+        output: "example/array-sum.proof".into(),
+        air_private_input: "example/air-private-input.json".into(),
+        num_queries: 3,
         lde_blowup_factor: 2,
         proof_of_work_bits: 16,
         fri_folding_factor: 8,
@@ -103,8 +104,8 @@ fn debug() {
     };
 
     let verifier_command = Command::Verify {
-        proof: "../example/array-sum.proof".into(),
-        required_security_bits: 80
+        proof: "example/array-sum.proof".into(),
+        required_security_bits: 10
     };
     match prime.to_lowercase().as_str() {
         STARKWARE_PRIME_HEX_STR => {
@@ -119,7 +120,7 @@ fn debug() {
                     let claim1 = EthVerifierClaim::new(program.clone(), air_public_input.clone());
                     let claim2 = EthVerifierClaim::new(program, air_public_input);
                     println!("Generate proof:");
-                    execute_command(prover_command, claim1);
+                    // execute_command(prover_command, claim1);
                     println!("Verify:");
                     execute_command(verifier_command, claim2);
                 }
@@ -175,7 +176,7 @@ fn separate_starknet_proof<>(
 
     let alphas: Vec<_> = fri_verifier.layer_alphas.iter().map(
         |alpha| {
-            let alpha_byte = alpha.0.to_bytes_be();
+            let alpha_byte = alpha.clone().into_bigint().to_bytes_be();
             u256::from_be_bytes(alpha_byte.try_into().unwrap())
         }
     ).collect();
@@ -194,22 +195,22 @@ fn separate_starknet_proof<>(
         ..
     } = proof;
 
-    // // Merkle proof for Base trace
-    // let base_trace_proof = trace_queries.base_trace_proof;
-    // // generate base trace input for VerifyMerkle contract.
-    // let base_merkle_data = MerkleData::new(&base_trace_proof, &base_trace_commitment, &query_positions);
-    // base_merkle_data.write_to_json("base_trace_proof");
+    // Merkle proof for Base trace
+    let base_trace_proof = trace_queries.base_trace_proof;
+    // generate base trace input for VerifyMerkle contract.
+    let base_merkle_data = MerkleData::new(&base_trace_proof, &base_trace_commitment, &query_positions);
+    base_merkle_data.write_to_json("base_trace_proof");
+
+    let extension_trace_proof = trace_queries.extension_trace_proof;
+
+    if !extension_trace_proof.is_none() {
+        let extension_merkle_data = MerkleData::new(&extension_trace_proof.unwrap(), &extension_trace_commitment.unwrap(), &query_positions);
+        extension_merkle_data.write_to_json("extension_trace_proof");
+    }
     //
-    // let extension_trace_proof = trace_queries.extension_trace_proof;
-    //
-    // if !extension_trace_proof.is_none() {
-    //     let extension_merkle_data = MerkleData::new(&extension_trace_proof.unwrap(), &extension_trace_commitment.unwrap(), &query_positions);
-    //     extension_merkle_data.write_to_json("extension_trace_proof");
-    // }
-    // //
-    // let composition_trace_proof = trace_queries.composition_trace_proof;
-    // let composition_merkle_data = MerkleData::new(&composition_trace_proof, &composition_trace_commitment, &query_positions);
-    // composition_merkle_data.write_to_json("composition_trace_proof");
+    let composition_trace_proof = trace_queries.composition_trace_proof;
+    let composition_merkle_data = MerkleData::new(&composition_trace_proof, &composition_trace_commitment, &query_positions);
+    composition_merkle_data.write_to_json("composition_trace_proof");
 
     let layers_flattenend_rows = fri_proof.layers.iter().map(|layer| {
         layer.flattenend_rows.clone()
@@ -220,20 +221,26 @@ fn separate_starknet_proof<>(
     let layers_commitments = fri_proof.layers.iter().map(|layer| {
         layer.commitment.clone()
     }).collect::<Vec<_>>();
-    let fri_data = FriData::new(
-        layers_flattenend_rows,
-        layers_merkle_proof,
-        layers_commitments,
-        &indices,
-        &alphas,
-        &options,
-        trace_len - 1);
+
+    let fri_data = match options.fri_folding_factor {
+        2 => FriData::new::<2>(
+            layers_flattenend_rows, layers_merkle_proof, layers_commitments,
+            &indices, &alphas, &options, trace_len),
+        4 => FriData::new::<4>(
+            layers_flattenend_rows, layers_merkle_proof, layers_commitments,
+            &indices, &alphas, &options, trace_len),
+        8 => FriData::new::<8>(
+            layers_flattenend_rows, layers_merkle_proof, layers_commitments,
+            &indices, &alphas, &options, trace_len),
+        16 => FriData::new::<16>(
+            layers_flattenend_rows, layers_merkle_proof, layers_commitments,
+            &indices, &alphas, &options, trace_len),
+
+        _ => unreachable!("")
+    };
+
     fri_data.write_to_json("fri_layer");
 
-    // let xs = query_positions
-    //     .iter()
-    //     .map(|pos| lde_domain.element(bit_reverse_index(lde_domain_size, *pos)))
-    //     .collect::<Vec<A::Fp>>();
 }
 
 fn generate_verifier<Claim: Stark<Fp = impl Field + ark_ff::FftField>>(
@@ -281,6 +288,8 @@ fn generate_verifier<Claim: Stark<Fp = impl Field + ark_ff::FftField>>(
     let lde_domain_size = air.trace_len() * air.lde_blowup_factor();
     let query_positions =
         Vec::from_iter(public_coin.draw_queries(options.num_queries.into(), lde_domain_size));
+
+
 
     (query_positions, fri_verifier)
 }
