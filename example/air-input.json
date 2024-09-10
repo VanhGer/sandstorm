@@ -1,6 +1,6 @@
 {
-    "trace_path": "example/trace.bin",
-    "memory_path": "example/memory.bin",
+    "trace_path": "../example/trace.bin",
+    "memory_path": "../example/memory.bin",
     "pedersen": [],
     "range_check": [],
     "ecdsa": [],
