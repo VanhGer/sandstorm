@@ -195,23 +195,23 @@ fn separate_starknet_proof<>(
         ..
     } = proof;
 
-    // Merkle proof for Base trace
-    let base_trace_proof = trace_queries.base_trace_proof;
-    // generate base trace input for VerifyMerkle contract.
-    let base_merkle_data = MerkleData::new(&base_trace_proof, &base_trace_commitment, &query_positions);
-    base_merkle_data.write_to_json("base_trace_proof");
-
-    let extension_trace_proof = trace_queries.extension_trace_proof;
-
-    if !extension_trace_proof.is_none() {
-        let extension_merkle_data = MerkleData::new(&extension_trace_proof.unwrap(), &extension_trace_commitment.unwrap(), &query_positions);
-        extension_merkle_data.write_to_json("extension_trace_proof");
-    }
+    // // Merkle proof for Base trace
+    // let base_trace_proof = trace_queries.base_trace_proof;
+    // // generate base trace input for VerifyMerkle contract.
+    // let base_merkle_data = MerkleData::new(&base_trace_proof, &base_trace_commitment, &query_positions);
+    // base_merkle_data.write_to_json("base_trace_proof");
     //
-    let composition_trace_proof = trace_queries.composition_trace_proof;
-    let composition_merkle_data = MerkleData::new(&composition_trace_proof, &composition_trace_commitment, &query_positions);
-    composition_merkle_data.write_to_json("composition_trace_proof");
-
+    // let extension_trace_proof = trace_queries.extension_trace_proof;
+    //
+    // if !extension_trace_proof.is_none() {
+    //     let extension_merkle_data = MerkleData::new(&extension_trace_proof.unwrap(), &extension_trace_commitment.unwrap(), &query_positions);
+    //     extension_merkle_data.write_to_json("extension_trace_proof");
+    // }
+    // //
+    // let composition_trace_proof = trace_queries.composition_trace_proof;
+    // let composition_merkle_data = MerkleData::new(&composition_trace_proof, &composition_trace_commitment, &query_positions);
+    // composition_merkle_data.write_to_json("composition_trace_proof");
+    //
     let layers_flattenend_rows = fri_proof.layers.iter().map(|layer| {
         layer.flattenend_rows.clone()
     }).collect::<Vec<_>>();
@@ -238,8 +238,10 @@ fn separate_starknet_proof<>(
 
         _ => unreachable!("")
     };
+    //
+    // fri_data.write_to_json("fri_layer");
 
-    fri_data.write_to_json("fri_layer");
+
 
 }
 
