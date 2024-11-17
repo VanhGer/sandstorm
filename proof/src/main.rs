@@ -86,16 +86,16 @@ enum Command {
 }
 
 fn debug() {
-    let program = "example/array-sum.json";
-    let air_public_input = "example/air-public-input.json";
+    let program = "./example/array-sum.json";
+    let air_public_input = "./example/air-public-input.json";
 
     let program_file = File::open(program).expect("could not open program file");
     let air_public_input_file = File::open(air_public_input).expect("could not open public input");
     let program_json: serde_json::Value = serde_json::from_reader(program_file).unwrap();
     let prime: String = serde_json::from_value(program_json["prime"].clone()).unwrap();
     let prover_command = Command::Prove {
-        output: "example/array-sum.proof".into(),
-        air_private_input: "example/air-private-input.json".into(),
+        output: "./example/array-sum.proof".into(),
+        air_private_input: "./example/air-private-input.json".into(),
         num_queries: 3,
         lde_blowup_factor: 2,
         proof_of_work_bits: 16,
@@ -104,7 +104,7 @@ fn debug() {
     };
 
     let verifier_command = Command::Verify {
-        proof: "example/array-sum.proof".into(),
+        proof: "./example/array-sum.proof".into(),
         required_security_bits: 10
     };
     match prime.to_lowercase().as_str() {
@@ -120,9 +120,9 @@ fn debug() {
                     let claim1 = EthVerifierClaim::new(program.clone(), air_public_input.clone());
                     let claim2 = EthVerifierClaim::new(program, air_public_input);
                     println!("Generate proof:");
-                    // execute_command(prover_command, claim1);
-                    println!("Verify:");
-                    execute_command(verifier_command, claim2);
+                    execute_command(prover_command, claim1);
+                    // println!("Verify:");
+                    // execute_command(verifier_command, claim2);
                 }
                 Layout::Recursive => {
                     use claims::recursive::CairoVerifierClaim;
@@ -144,20 +144,20 @@ fn debug() {
 }
 
 fn main() {
-    // debug();
-    let program = "example/array-sum.json";
-    let air_public_input = "example/air-public-input.json";
-
-    let program_file = File::open(program).expect("could not open program file");
-    let air_public_input_file = File::open(air_public_input).expect("could not open public input");
-    let program_json: serde_json::Value = serde_json::from_reader(program_file).unwrap();
-
-    use p3618502788666131213697322783095070105623107215331596699973092056135872020481::ark::Fp;
-    let program: CompiledProgram<Fp> = serde_json::from_value(program_json).unwrap();
-    let air_public_input: AirPublicInput<Fp> =
-        serde_json::from_reader(air_public_input_file).unwrap();
-    let claim1 = EthVerifierClaim::new(program, air_public_input);
-    separate_starknet_proof(claim1);
+    debug();
+    // let program = "example/array-sum.json";
+    // let air_public_input = "example/air-public-input.json";
+    // 
+    // let program_file = File::open(program).expect("could not open program file");
+    // let air_public_input_file = File::open(air_public_input).expect("could not open public input");
+    // let program_json: serde_json::Value = serde_json::from_reader(program_file).unwrap();
+    // 
+    // use p3618502788666131213697322783095070105623107215331596699973092056135872020481::ark::Fp;
+    // let program: CompiledProgram<Fp> = serde_json::from_value(program_json).unwrap();
+    // let air_public_input: AirPublicInput<Fp> =
+    //     serde_json::from_reader(air_public_input_file).unwrap();
+    // let claim1 = EthVerifierClaim::new(program, air_public_input);
+    // separate_starknet_proof(claim1);
 }
 
 
@@ -240,6 +240,8 @@ fn separate_starknet_proof<>(
     };
 
     fri_data.write_to_json("fri_layer");
+
+
 
 }
 
